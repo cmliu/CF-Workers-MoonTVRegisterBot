@@ -65,6 +65,31 @@ async function getLatestAppRelease() {
     }
 }
 
+// 获取最新TV客户端下载页信息
+async function getLatestTvRelease() {
+    try {
+        const response = await fetch('https://api.github.com/repos/MoonTechLab/Selene-TV/releases/latest', {
+            headers: {
+                'User-Agent': USER_AGENT
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error(`GitHub API请求失败: HTTP ${response.status}`);
+        }
+
+        const releaseData = await response.json();
+
+        return {
+            version: releaseData.tag_name,
+            downloadUrl: releaseData.html_url
+        };
+    } catch (error) {
+        console.error('获取最新TV客户端版本失败:', error);
+        return null;
+    }
+}
+
 export default {
     async fetch(request, env, ctx) {
         const moontvUrl = extractBaseUrl(env.MOONTVURL || "https://moontv.com/");
@@ -454,8 +479,11 @@ async function handleStartCommand(bot_token, userId, chatId, chatType, GROUP_ID,
         // 检查用户是否已注册（通过API查询）
         const userExists = await checkUserExists(apiUrl, username, password, KV, userId.toString());
 
-        // 获取最新APP版本信息
-        const appInfo = await getLatestAppRelease();
+        // 获取最新APP/TV客户端版本信息
+        const [appInfo, tvInfo] = await Promise.all([
+            getLatestAppRelease(),
+            getLatestTvRelease()
+        ]);
 
         let responseMessage;
 
@@ -535,7 +563,7 @@ async function handleStartCommand(bot_token, userId, chatId, chatType, GROUP_ID,
             } else {
                 // 3次尝试后仍然失败
                 console.error(`经过${maxRetries}次尝试后注册仍然失败，最后错误:`, lastError);
-                await sendMessage(bot_token, chatId, `❌ 注册失败\n\n经过${maxRetries}次尝试后仍无法成功注册账户。\n\n请联系管理员排查问题。\n\n错误信息: ${lastError?.message || '未知错误'}`, moontvUrl, actualSiteName, appInfo);
+                await sendMessage(bot_token, chatId, `❌ 注册失败\n\n经过${maxRetries}次尝试后仍无法成功注册账户。\n\n请联系管理员排查问题。\n\n错误信息: ${lastError?.message || '未知错误'}`, moontvUrl, actualSiteName, appInfo, tvInfo);
                 return new Response('OK');
             }
         } else {
@@ -543,7 +571,7 @@ async function handleStartCommand(bot_token, userId, chatId, chatType, GROUP_ID,
             responseMessage = `ℹ️ 你已注册过账户\n\n🌐 <b>服务器：</b><code>${moontvUrl}</code>\n🆔 <b>用户名：</b><code>${userId}</code> (您的TG数字ID)\n\n💡 使用 <code>/pwd 新密码</code> 可以修改密码\n\n⚠️ 如忘记密码，可直接通过修改密码命令重置`;
         }
 
-        await sendMessage(bot_token, chatId, responseMessage, moontvUrl, actualSiteName, appInfo);
+        await sendMessage(bot_token, chatId, responseMessage, moontvUrl, actualSiteName, appInfo, tvInfo);
         return new Response('OK');
     } catch (error) {
         console.error('Error in start command:', error);
@@ -842,7 +870,7 @@ async function getGroupName(bot_token, groupId) {
 }
 
 // 发送消息（带有站点链接按钮）
-async function sendMessage(bot_token, chatId, text, moontvUrl = null, siteName = null, appInfo = null) {
+async function sendMessage(bot_token, chatId, text, moontvUrl = null, siteName = null, appInfo = null, tvInfo = null) {
     try {
         const messageData = {
             chat_id: chatId,
@@ -875,6 +903,22 @@ async function sendMessage(bot_token, chatId, text, moontvUrl = null, siteName =
             inlineKeyboard.push([{
                 text: defaultAppButtonText,
                 url: 'https://github.com/MoonTechLab/Selene/releases'
+            }]);
+        }
+
+        // 如果提供了 tvInfo，添加TV客户端下载按钮
+        if (tvInfo && tvInfo.downloadUrl && tvInfo.version) {
+            const tvButtonText = `📺 TV客户端下载 ${tvInfo.version}`;
+            inlineKeyboard.push([{
+                text: tvButtonText,
+                url: tvInfo.downloadUrl
+            }]);
+        } else {
+            // 添加默认的TV客户端下载按钮
+            const defaultTvButtonText = '📺 TV客户端下载';
+            inlineKeyboard.push([{
+                text: defaultTvButtonText,
+                url: 'https://github.com/MoonTechLab/Selene-TV/releases'
             }]);
         }
 
